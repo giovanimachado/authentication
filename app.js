@@ -9,11 +9,13 @@
 require("dotenv").config(); // Implement enviromental variables
 const express = require("express");
 const bodyParser = require("body-parser");
+const findOrCreate = require("mongoose-findorcreate");
 const ejs = require("ejs");
 const mongoose = require("mongoose");
 const session = require("express-session");
 const passport = require("passport");
 const passportLocalMongoose = require("passport-local-mongoose");
+const GoogleStrategy = require("passport-google-oauth20").Strategy;
 // const encryption = require("mongoose-encryption"); // Level 2 implementation
 // const md5 = require("md5"); // Level 3 implementation
 // const bcrypt = require("bcrypt-nodejs"); // Level 4 implementation
@@ -54,11 +56,15 @@ mongoose.set("useCreateIndex", true);
 // It is created form  mongoose.Schema class
 const userSchema = new mongoose.Schema({
   email: String,
-  password: String
+  password: String,
+  googleId: String
 });
 
-// this plugin is ging to hash and salt the password
+// this plugin is going to hash and salt the password
 userSchema.plugin(passportLocalMongoose);
+
+// this plugin is going to use the findOr Create package i the userSchema
+userSchema.plugin(findOrCreate);
 
 // userSchema.plugin(encryption,{secret: process.env.MYSECRET, encryptedFields: ["password"]}); // Implement Level 2
 
@@ -67,10 +73,40 @@ const User = new mongoose.model("User", userSchema);
 // Use passport to create a local login stategy
 passport.use(User.createStrategy());
 
-// Create the session cookie
-passport.serializeUser(User.serializeUser());
-// Destroy (eat :) ) the session cookie
-passport.deserializeUser(User.deserializeUser());
+
+// In the first attempt to use Oauth with google, I received a seiealized error
+// Create the session cookie using the package passport-local-mongoose
+// passport.serializeUser(User.serializeUser());
+// // Destroy (eat :) ) the session cookie
+// passport.deserializeUser(User.deserializeUser());
+
+
+// Srialize and deserialize using passport
+passport.serializeUser(function(user, done) {
+  done(null, user.id);
+});
+
+passport.deserializeUser(function(id, done) {
+  User.findById(id, function(err, user) {
+    done(err, user);
+  });
+});
+
+//Set up google Strategy
+passport.use(new GoogleStrategy({
+    clientID: process.env.GOOGLE_CLIENT_ID,
+    clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+    callbackURL: "http://localhost:3000/auth/google/secrets",
+    userProfileURL: "https://www.googleapis.com/oauth2/v3/userinfo"
+  },
+  function(accessToken, refreshToken, profile, cb) {
+    console.log(profile);
+    // Reference: https://stackoverflow.com/questions/20431049/what-is-function-user-findorcreate-doing-and-when-is-it-called-in-passport/41355218#41355218
+    User.findOrCreate({ googleId: profile.id }, function (err, user) {
+      return cb(err, user);
+    });
+  }
+));
 
 app.get("/", function(req, res){
   res.render("home");
@@ -97,7 +133,6 @@ app.post("/login", function(req, res){
     }
   });
 });
-
 
 // Bellow here is the code for level 1 to 4 implemantation
 // app.post("/login", function(req, res){
@@ -139,6 +174,17 @@ app.post("/register", function(req, res){
     }
   });
 });
+
+app.get("/auth/google",
+  passport.authenticate("google", { scope: ["profile"] }));
+
+app.get("/auth/google/secrets",
+  passport.authenticate("google", { failureRedirect: "/login" }),
+  function(req, res) {
+    // Successful authentication, redirect home.
+    res.redirect("/secrets");
+  });
+
 
 app.get("/secrets", function(req, res){
   if (req.isAuthenticated()){
