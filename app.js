@@ -6,6 +6,7 @@
 // Level 2 - Encryption
 // Level 1 - Username and Password Only
 
+require("dotenv").config();
 const express = require("express");
 const bodyParser = require("body-parser");
 const ejs = require("ejs");
@@ -13,6 +14,8 @@ const mongoose = require("mongoose");
 const encryption = require("mongoose-encryption");
 
 const app = express();
+
+console.log(process.env.API_KEY);
 
 app.use(express.static("public"));
 app.set("view engine", "ejs");
@@ -36,8 +39,8 @@ const userSchema = new mongoose.Schema({
   password: String
 });
 
-const mysecret = "thisistheparalelepipedo";
-userSchema.plugin(encryption,{secret: mysecret, encryptedFields: ["password"]});
+
+userSchema.plugin(encryption,{secret: process.env.MYSECRET, encryptedFields: ["password"]});
 
 const User = new mongoose.model("User", userSchema);
 
